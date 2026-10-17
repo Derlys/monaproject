@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useCallback, useMemo, useEffect } from "react";
-import { useCreateWallet, useLogin, usePrivy, useSendTransaction, WalletWithMetadata } from "@privy-io/react-auth";
+import { useCreateWallet, useLogin, usePrivy, useSendTransaction, WalletWithMetadata,useWallets } from "@privy-io/react-auth";
 import { createPublicClient, http, formatEther } from "viem";
 import { monadTestnet } from "viem/chains";
 import { QRCodeSVG } from "qrcode.react";
+
 
 const publicClient = createPublicClient({
   chain: monadTestnet,
@@ -21,6 +22,8 @@ export default function UseLoginPrivy() {
   const [transactionHash, setTransactionHash] = useState<string | null>(null);
   const [transactionStatus, setTransactionStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
   const { ready, user, logout } = usePrivy();
+  const { wallets, ready: walletsReady } = useWallets();
+  const [transactionError, setTransactionError] = useState("");
 
   const { createWallet: createEthereumWallet } = useCreateWallet();
 
@@ -39,6 +42,11 @@ export default function UseLoginPrivy() {
 
   const hasEthereumWallet = ethereumEmbeddedWallets.length > 0;
   const walletAddress = ethereumEmbeddedWallets[0]?.address;
+  const connectedWallet = wallets.find(
+      (wallet) =>
+          wallet.walletClientType === "privy" &&
+          wallet.address.toLowerCase() === walletAddress?.toLowerCase()
+  );
 
   const fetchBalance = useCallback(async () => {
     if (!walletAddress) return;
@@ -91,15 +99,47 @@ export default function UseLoginPrivy() {
 
   const onSendTransaction = async () => {
     if (!userAddress) return;
-    
+
     setTransactionStatus('pending');
     setTransactionHash(null);
     
     try {
-      const result = await sendTransaction({
-        to: userAddress,
-        value: 1000000000000000,
-      });
+      setTransactionError("");
+
+      if (!walletsReady || !connectedWallet || !walletAddress) {
+        throw new Error(
+            "La wallet integrada no está conectada. Vuelve a iniciar sesión con la misma cuenta de Privy."
+        );
+      }
+
+      await connectedWallet.switchChain(monadTestnet.id);
+
+      const provider = await connectedWallet.getEthereumProvider();
+
+      const accounts = (await provider.request({
+        method: "eth_accounts",
+      })) as string[];
+
+      if (
+          !accounts.some(
+              (address) => address.toLowerCase() === walletAddress.toLowerCase()
+          )
+      ) {
+        throw new Error(
+            "La cuenta conectada no coincide con la dirección mostrada."
+        );
+      }
+
+      const result = await sendTransaction(
+          {
+            to: userAddress.trim(),
+            value: 1000000000000000,
+            chainId: monadTestnet.id,
+          },
+          {
+            address: walletAddress,
+          }
+      );
       
       setTransactionHash(result.hash);
       setTransactionStatus('success');
@@ -125,7 +165,7 @@ export default function UseLoginPrivy() {
       <div className="max-w-4xl mx-auto">
         {/* Header Section */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-slate-800 dark:text-slate-100 mb-2">Privy Wallet</h1>
+          <h1 className="text-4xl font-bold text-slate-800 dark:text-slate-100 mb-2">MonPay</h1>
           <p className="text-lg text-slate-600 dark:text-slate-300">Connect and manage your embedded wallet</p>
         </div>
 
@@ -327,7 +367,7 @@ export default function UseLoginPrivy() {
                     {transactionStatus === 'error' && (
                       <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
                         <div className="flex items-center">
-                          <span className="text-red-800 dark:text-red-200 font-medium">❌ Transaction failed. Please try again.</span>
+                          <span className="text-red-800 dark:text-red-200 font-medium">{transactionError || "No se pudo enviar la transacción."}</span>
                         </div>
                       </div>
                     )}
