@@ -1,0 +1,26 @@
+# Despliegue en Render (Blueprint). El indexador necesita un proceso que siga corriendo,
+# por eso se usa un Web Service normal y NO funciones serverless (Vercel).
+services:
+  - type: web
+    name: monpago-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: USE_MOCK
+        value: "false"
+      - key: FRONTEND_URL
+        sync: false
+      - key: CONTRACT_ADDRESS
+        sync: false
+      - key: DEPLOY_BLOCK
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
